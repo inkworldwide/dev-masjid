@@ -1,0 +1,855 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  SUPER_ADMIN
+  MASJID_ADMIN
+  USER
+}
+
+enum MasjidStaffRole {
+  IMAM
+  MUEZZIN
+  MUTAWALLI
+  COMMITTEE_MEMBER
+  ACCOUNTANT
+  LAWYER
+  ELECTRICIAN
+  PLUMBER
+  WORKER
+}
+
+enum MasjidStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+  SUSPENDED
+}
+
+enum DocumentVisibility {
+  PUBLIC
+  PRIVATE
+}
+
+enum DocumentStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum PropertyOccupancyStatus {
+  VACANT
+  OCCUPIED
+  UNDER_MAINTENANCE
+}
+
+enum DonationCategory {
+  GENERAL_FUND
+  CONSTRUCTION
+  MAINTENANCE
+  EDUCATION
+  ZAKAT
+  CHARITY
+  COMMUNITY_WELFARE
+  EMERGENCY
+}
+
+enum AnnouncementCategory {
+  GENERAL
+  COMMUNITY
+  PRAYER
+  CHARITY
+  IMPORTANT_NOTICE
+  MAINTENANCE
+  EMERGENCY
+}
+
+enum EventCategory {
+  LECTURE
+  QURANIC_CIRCLE
+  COMMUNITY_GATHERING
+  YOUTH_PROGRAM
+  MADRASA_EVENT
+  CHARITY_DRIVE
+}
+
+enum AdCategory {
+  HAJJ_UMRAH
+  ISLAMIC_BOOKS
+  MOSQUE_SUPPLIES
+  HALAL_FOOD
+  ISLAMIC_CLOTHING
+  MADRASA_SUPPLIES
+  COMMUNITY_SPONSOR
+}
+
+enum AdStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+enum NotificationType {
+  ANNOUNCEMENT
+  EVENT_ALERT
+  DONATION_RECEIPT
+  ADMIN_ASSIGNMENT
+  VERIFICATION_UPDATE
+  DOCUMENT_EXPIRY
+  GENERAL_SYSTEM
+}
+
+model User {
+  id                     String                  @id @default(uuid())
+  customId               String?                 @unique
+  email                  String                  @unique
+  passwordHash           String
+  plainPassword          String?
+  name                   String
+  phone                  String?
+  role                   Role                    @default(USER)
+  avatar                 String?
+  isEmailVerified        Boolean                 @default(false)
+  isApproved             Boolean                 @default(true)
+  isSuspended            Boolean                 @default(false)
+
+  // Associated Masjid for regular users & community members
+  masjidId               String?
+  masjid                 Masjid?                 @relation("MasjidAssociatedUsers", fields: [masjidId], references: [id], onDelete: SetNull)
+
+  // Soft Deletion
+  isDeleted              Boolean                 @default(false)
+  deletedAt              DateTime?
+  deletedBy              String?
+
+  emailVerificationToken String?
+  passwordResetToken     String?
+  passwordResetExpires   DateTime?
+  adminPermissions       MasjidAdminPermission[]
+  staffRoles             MasjidStaff[]
+  donations              DonationRecord[]
+  savedMasjids           SavedMasjid[]
+  notifications          Notification[]
+  auditLogs              AuditLog[]
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+
+  @@index([email])
+  @@index([role])
+  @@index([masjidId])
+  @@index([isDeleted])
+}
+
+model City {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  slug      String   @unique
+  masjids   Masjid[]
+  createdAt DateTime @default(now())
+}
+
+model Masjid {
+  id                  String                  @id @default(uuid())
+  name                String
+  slug                String                  @unique
+  location            String
+  contactNumber       String
+  plotSize            String // e.g. "12,500 Sq Ft"
+  registrationNo      String? // e.g. "WAQF/DEL/2014/89"
+  status              MasjidStatus            @default(VERIFIED)
+  description         String
+  coverImage          String
+  pictures            String[] // Gallery photos
+  videoTourUrl        String?
+  surroundingAreaDesc String?
+  nearbyLandmarks     String?
+  facilities          String[] // ["Women's Prayer Area", "Wudu Area", "Parking", ...]
+
+  // Dynamic Content & CMS Customizations
+  dailyPrayers        Json?
+  prayerTimingLink    Json?
+  surroundingDetails  Json?
+  customFacilities    Json?
+
+  // Transport Distances
+  busDistance     String?
+  trainDistance   String?
+  metroDistance   String?
+  airportDistance String?
+
+  // Prayer Times
+  fajrTime        String?
+  dhuhrTime       String?
+  asrTime         String?
+  maghribTime     String?
+  ishaTime        String?
+  jummahTime      String?
+
+  // Address
+  address   String
+  cityId    String
+  city      City    @relation(fields: [cityId], references: [id])
+  state     String  @default("Delhi")
+  pincode   String
+  latitude  Float?
+  longitude Float?
+
+  // Relations
+  admins          MasjidAdminPermission[]
+  staff           MasjidStaff[]
+  documents       MasjidDocument[]
+  properties      MasjidProperty[]
+  campaigns       DonationCampaign[]
+  announcements   MasjidAnnouncement[]
+  events          MasjidEvent[]
+  savedByUsers    SavedMasjid[]
+  associatedUsers User[]                  @relation("MasjidAssociatedUsers")
+
+  // Financial Management Relations
+  financialYears        MasjidFinancialYear[]
+  financialDonations    MasjidDonation[]
+  otherIncomes          MasjidOtherIncome[]
+  financialExpenditures MasjidExpenditure[]
+  bankAccounts          MasjidBankAccount[]
+  manualAudits          MasjidManualAudit[]
+  financialAdjustments  MasjidFinancialAdjustment[]
+  financialAuditLogs    FinancialAuditLog[]
+
+  // Module Governance
+  enabledModules Json?
+
+  advertisements Advertisement[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([cityId])
+  @@index([status])
+  @@index([name])
+}
+
+model MasjidAdminPermission {
+  id                        String   @id @default(uuid())
+  userId                    String
+  user                      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  masjidId                  String
+  masjid                    Masjid   @relation(fields: [masjidId], references: [id], onDelete: Cascade)
+  canAccessMainPage         Boolean  @default(true)
+  canAccessDocuments        Boolean  @default(true)
+  canAccessDonations        Boolean  @default(true)
+  canAccessRolesPermissions Boolean  @default(true)
+  canAccessProperties       Boolean  @default(true)
+  canAccessTenants          Boolean  @default(true)
+  canAccessMembers          Boolean  @default(true)
+  canAccessStaff            Boolean  @default(true)
+  canAccessEvents           Boolean  @default(true)
+  canAccessAnnouncements    Boolean  @default(true)
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  @@unique([userId, masjidId])
+  @@index([userId])
+  @@index([masjidId])
+}
+
+model MasjidStaff {
+  id          String          @id @default(uuid())
+  masjidId    String
+  masjid      Masjid          @relation(fields: [masjidId], references: [id], onDelete: Cascade)
+  userId      String?
+  user        User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  name        String
+  role        MasjidStaffRole
+  contact     String
+  salary      Float?          @default(0)
+  joiningDate DateTime        @default(now())
+  status      String          @default("ACTIVE")
+  createdAt   DateTime        @default(now())
+
+  @@index([masjidId])
+  @@index([role])
+}
+
+model MasjidDocument {
+  id          String             @id @default(uuid())
+  masjidId    String
+  masjid      Masjid             @relation(fields: [masjidId], references: [id], onDelete: Cascade)
+  title       String
+  fileUrl     String
+  type        String
+  visibility  DocumentVisibility @default(PUBLIC)
+  status      DocumentStatus     @default(PENDING)
+  uploadedBy  String
+  expiryDate  DateTime?
+  description String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  @@index([masjidId])
+  @@index([visibility])
+  @@index([status])
+}
+
+model MasjidProperty {
+  id               String                  @id @default(uuid())
+  masjidId         String
+  masjid           Masjid                  @relation(fields: [masjidId], references: [id], onDelete: Cascade)
+  propertyCustomId String
+  contactPhone     String
+  location         String
+  documentUrl      String?
+  monthlyRent      Decimal                 @db.Decimal(12, 2)
+  revenueTotal     Decimal                 @default(0.00) @db.Decimal(12, 2)
+  status           PropertyOccupancyStatus @default(OCCUPIED)
+  verificationStatus String                @default("PENDING")
+  tenants          MasjidTenant[]
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  @@index([masjidId])
+  @@index([propertyCustomId])
+}
+
+model MasjidTenant {
+  id             String         @id @default(uuid())
+  propertyId     String
+  property       MasjidProperty @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  tenantCustomId String
+  tenantName     String
+  contactPhone   String
+  tenantDocUrl   String?
+  monthlyRent    Decimal        @db.Decimal(12, 2)
+  leaseStartDate DateTime       @default(now())
+  leaseEndDate   DateTime?
+  status         String         @default("ACTIVE")
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([propertyId])
+  @@index([tenantCustomId])
+}
+
+model DonationCampaign {
+  id           String           @id @default(uuid())
+  masjidId     String
+  masjid       Masjid           @relation(fields: [masjidId], references: [id], onDelete: Cascade)
+  title        String
+  purpose      String
+  coverImage   String?
+  images       String[]         @default([])
+  category     DonationCategory @default(GENERAL_FUND)
+  goalAmount   Decimal          @db.Decimal(12, 2)
+  raisedAmount Decimal          @default(0.00) @db.Decimal(12, 2)
+  startDate    DateTime         @default(now())
+  endDate      DateTime?
+  status       String           @default("PENDING")
+  donations    DonationRecord[]
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@index([masjidId])
+  @@index([category])
+  @@index([status])
+}
+
+model DonationRecord {
+  id            String           @id @default(uuid())
+  campaignId    String
+  campaign      DonationCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  donorId       String?
+  donor         User?            @relation(fields: [donorId], references: [id], onDelete: SetNull)
+  donorName     String
+  donorEmail    String
+  amount        Decimal          @db.Decimal(12, 2)
+  paymentMethod String           @default("DEMO_PAYMENT")
+  receiptNumber String           @unique
+  notes         String?
+  createdAt     DateTime         @default(now())
+
+  @@index([campaignId])
+  @@index([donorId])
+  @@index([receiptNumber])
+}
+
+model MasjidAnnouncement {
+  id          String               @id @default(uuid())
+  masjidId    String
+  masjid      Masjid               @relation(fields: [masjidId], references: [id], onDelete: Cascade)
+  title       String
+  category    AnnouncementCategory @default(GENERAL)
+  description String
+  imageUrl    String?
+  isImportant Boolean              @default(false)
+  verificationStatus String        @default("PENDING")
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  @@index([masjidId])
+  @@index([category])
+  @@index([isImportant])
+}
+
+model MasjidEvent {
+  id          String        @id @default(uuid())
+  masjidId    String
+  masjid      Masjid        @relation(fields: [masjidId], references: [id], onDelete: Cascade)
+  title       String
+  category    EventCategory @default(LECTURE)
+  eventDate   DateTime
+  eventEndDate DateTime?
+  eventTime   String
+  location    String
+  description String
+  imageUrl    String?
+  speakerName String?
+  verificationStatus String @default("PENDING")
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([masjidId])
+  @@index([eventDate])
+  @@index([category])
+}
+
+model SavedMasjid {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  masjidId  String
+  masjid    Masjid   @relation(fields: [masjidId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, masjidId])
+  @@index([userId])
+  @@index([masjidId])
+}
+
+model CommunityAd {
+  id               String     @id @default(uuid())
+  title            String
+  sponsorName      String
+  category         AdCategory @default(COMMUNITY_SPONSOR)
+  description      String
+  imageUrl         String
+  targetUrl        String?
+  location         String     @default("Pan-India")
+  contactPhone     String?
+  status           AdStatus   @default(APPROVED)
+  impressionsCount Int        @default(0)
+  clicksCount      Int        @default(0)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  @@index([category])
+  @@index([status])
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  message   String
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  @@index([userId])
+  @@index([isRead])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  entity    String
+  details   String
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+// =========================================================================
+// FINANCIAL MANAGEMENT & MANUAL AUDIT MODULE
+// =========================================================================
+
+enum FundType {
+  GENERAL_FUND
+  ZAKAT
+  SADAQAH
+  GENERAL_CHARITY
+  INTEREST_FUND
+  OTHER_SOURCES
+}
+
+enum FinancialPaymentMethod {
+  CASH
+  CHEQUE
+  DEMAND_DRAFT
+  UPI
+  NEFT_RTGS
+  OTHER
+}
+
+enum ExpenseCategoryType {
+  GENERAL_ADMINISTRATION
+  FESTIVAL_EXPENSE
+  CHARITABLE_EXPENSE
+  MISCELLANEOUS_EXPENSE
+}
+
+enum AuditReconciliationStatus {
+  DRAFT
+  IN_REVIEW
+  RECONCILED
+  DIFFERENCE_FOUND
+  APPROVED
+  LOCKED
+}
+
+model MasjidFinancialYear {
+  id              String                 @id @default(uuid())
+  masjidId        String
+  masjid          Masjid                 @relation(fields: [masjidId], references: [id], onDelete: Cascade)
+  yearName        String                 // e.g. "2026-2027"
+  startDate       DateTime
+  endDate         DateTime
+  isClosed        Boolean                @default(false)
+  openingBalances MasjidOpeningBalance[]
+  donations       MasjidDonation[]
+  otherIncomes    MasjidOtherIncome[]
+  expenditures    MasjidExpenditure[]
+  manualAudits    MasjidManualAudit[]
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  @@unique([masjidId, yearName])
+  @@index([masjidId])
+}
+
+model MasjidOpeningBalance {
+  id              String              @id @default(uuid())
+  financialYearId String
+  financialYear   MasjidFinancialYear @relation(fields: [financialYearId], references: [id], onDelete: Cascade)
+  masjidId        String
+  cashBalance     Decimal             @default(0.00) @db.Decimal(12, 2)
+  bankBalance     Decimal             @default(0.00) @db.Decimal(12, 2)
+  generalFund     Decimal             @default(0.00) @db.Decimal(12, 2)
+  zakat           Decimal             @default(0.00) @db.Decimal(12, 2)
+  sadaqah         Decimal             @default(0.00) @db.Decimal(12, 2)
+  generalCharity  Decimal             @default(0.00) @db.Decimal(12, 2)
+  interestFund    Decimal             @default(0.00) @db.Decimal(12, 2)
+  isLocked        Boolean             @default(true)
+  notes           String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@index([masjidId])
+  @@index([financialYearId])
+}
+
+model MasjidDonation {
+  id               String                 @id @default(uuid())
+  masjidId         String
+  masjid           Masjid                 @relation(fields: [masjidId], references: [id], onDelete: Cascade)
+  financialYearId  String
+  financialYear    MasjidFinancialYear    @relation(fields: [financialYearId], references: [id], onDelete: Cascade)
+  donationDate     DateTime               @default(now())
+  amount           Decimal                @db.Decimal(12, 2)
+  fundType         FundType               @default(GENERAL_FUND)
+  paymentMethod    FinancialPaymentMethod @default(CASH)
+  receiptNumber    String                 // Unique within Masjid
+  donorName        String
+  donorPhone       String?
+  donorEmail       String?
+  donorAddress     String?
+  description      String?
+  chequeNumber     String?
+  bankName         String?
+  chequeDate       DateTime?
+  ddNumber         String?
+  upiTransactionId String?
+  utrNumber        String?
+  status           String                 @default("VERIFIED") // VERIFIED | VOID
+  createdBy        String
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  @@unique([masjidId, receiptNumber])
+  @@index([masjidId])
+  @@index([fundType])
+  @@index([receiptNumber])
+}
+
+model MasjidOtherIncome {
+  id              String                 @id @default(uuid())
+  masjidId        String
+  masjid          Masjid                 @relation(fields: [masjidId], references: [id], onDelete: Cascade)
+  financialYearId String
+  financialYear   MasjidFinancialYear    @relation(fields: [financialYearId], references: [id], onDelete: Cascade)
+  sourceName      String
+  description     String
+  amount          Decimal                @db.Decimal(12, 2)
+  incomeDate      DateTime               @default(now())
+  paymentMethod   FinancialPaymentMethod @default(CASH)
+  referenceNumber String
+  fundType        FundType               @default(GENERAL_FUND)
+  collectorName   String?
+  documentUrl     String?
+  status          String                 @default("VERIFIED")
+  createdBy       String
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  @@index([masjidId])
+}
+
+model MasjidExpenditure {
+  id                 String                 @id @default(uuid())
+  masjidId           String
+  masjid             Masjid                 @relation(fields: [masjidId], references: [id], onDelete: Cascade)
+  financialYearId    String
+  financialYear      MasjidFinancialYear    @relation(fields: [financialYearId], references: [id], onDelete: Cascade)
+  expenseDate        DateTime               @default(now())
+  category           ExpenseCategoryType
+  subcategory        String                 // Staff Salary, Electricity, Water, Ramadan, Destitute Aid, etc.
+  fundType           FundType               @default(GENERAL_FUND)
+  description        String
+  amount             Decimal                @db.Decimal(12, 2)
+  paymentMethod      FinancialPaymentMethod @default(CASH)
+  payeeName          String
+  billInvoiceNumber  String
+  referenceNumber    String?
+  billDocumentUrl    String?
+  chequeNumber       String?
+  bankName           String?
+  upiTransactionId   String?
+  utrNumber          String?
+  notes              String?
+  disbursedBy        String?                // Who authorized / provided the funds (e.g. Trustee / Committee / Specific Contributor)
+  status             String                 @default("ACTIVE") // ACTIVE | VOID
+  createdBy          String
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+
+  @@index([masjidId])
+  @@index([category])
+  @@index([fundType])
+}
+
+model MasjidBankAccount {
+  id                 String   @id @default(uuid())
+  masjidId           String
+  masjid             Masjid   @relation(fields: [masjidId], references: [id], onDelete: Cascade)
+  bankName           String   // e.g. State Bank of India
+  accountNumberLast4 String   // e.g. "4921"
+  accountTitle       String   // e.g. "Main Masjid Account"
+  accountType        String   @default("SAVINGS")
+  ifscCode           String?  // e.g. "SBIN0001234"
+  upiId              String?  // e.g. "jamamasjid@sbi"
+  currentBalance     Decimal  @default(0.00) @db.Decimal(12, 2)
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+
+  @@index([masjidId])
+}
+
+model MasjidManualAudit {
+  id                       String                    @id @default(uuid())
+  masjidId                 String
+  masjid                   Masjid                    @relation(fields: [masjidId], references: [id], onDelete: Cascade)
+  financialYearId          String
+  financialYear            MasjidFinancialYear       @relation(fields: [financialYearId], references: [id], onDelete: Cascade)
+  month                    String                    // e.g. "August 2026"
+  auditDate                DateTime                  @default(now())
+  status                   AuditReconciliationStatus @default(DRAFT)
+  
+  // Opening Balance Comparison
+  systemOpeningBalance     Decimal                   @db.Decimal(12, 2)
+  actualOpeningBalance     Decimal                   @db.Decimal(12, 2)
+  openingDifference        Decimal                   @db.Decimal(12, 2)
+
+  // Income Comparison
+  systemTotalIncome        Decimal                   @db.Decimal(12, 2)
+  verifiedTotalIncome      Decimal                   @db.Decimal(12, 2)
+  incomeDifference         Decimal                   @db.Decimal(12, 2)
+
+  // Expenditure Comparison
+  systemTotalExpenditure   Decimal                   @db.Decimal(12, 2)
+  verifiedTotalExpenditure Decimal                   @db.Decimal(12, 2)
+  expenditureDifference    Decimal                   @db.Decimal(12, 2)
+
+  // Closing Balance Comparison
+  systemClosingBalance     Decimal                   @db.Decimal(12, 2)
+  verifiedClosingBalance   Decimal                   @db.Decimal(12, 2)
+
+  // Cash & Bank Reconciliation
+  systemCashBalance        Decimal                   @db.Decimal(12, 2)
+  actualCashCounted        Decimal                   @db.Decimal(12, 2)
+  cashDifference           Decimal                   @db.Decimal(12, 2)
+
+  systemBankBalance        Decimal                   @db.Decimal(12, 2)
+  actualBankBalance        Decimal                   @db.Decimal(12, 2)
+  bankDifference           Decimal                   @db.Decimal(12, 2)
+
+  auditRemarks             String?
+  comparisonData           Json                      // Detailed item-by-item breakdown & bank statements
+  auditedBy                String
+  approvedBy               String?
+  approvedAt               DateTime?
+  createdAt                DateTime                  @default(now())
+  updatedAt                DateTime                  @updatedAt
+
+  adjustments              MasjidFinancialAdjustment[]
+
+  @@unique([masjidId, financialYearId, month])
+  @@index([masjidId])
+}
+
+model MasjidFinancialAdjustment {
+  id            String            @id @default(uuid())
+  masjidId      String
+  masjid        Masjid            @relation(fields: [masjidId], references: [id], onDelete: Cascade)
+  manualAuditId String
+  manualAudit   MasjidManualAudit @relation(fields: [manualAuditId], references: [id], onDelete: Cascade)
+  amount        Decimal           @db.Decimal(12, 2)
+  type          String            // "INCOME_ADJUSTMENT" | "EXPENSE_ADJUSTMENT" | "CASH_ADJUSTMENT" | "BANK_ADJUSTMENT"
+  reason        String
+  documentUrl   String?
+  remarks       String?
+  approvedBy    String
+  createdAt     DateTime          @default(now())
+
+  @@index([masjidId])
+  @@index([manualAuditId])
+}
+
+model FinancialAuditLog {
+  id             String   @id @default(uuid())
+  masjidId       String
+  masjid         Masjid   @relation(fields: [masjidId], references: [id], onDelete: Cascade)
+  userId         String
+  action         String   // "CREATE_DONATION", "VOID_EXPENDITURE", "AUDIT_RECONCILE", "LOCK_AUDIT"
+  entityType     String   // "EXPENDITURE", "DONATION", "MANUAL_AUDIT"
+  entityId       String
+  previousValues Json?
+  newValues      Json?
+  reason         String?
+  createdAt      DateTime @default(now())
+
+  @@index([masjidId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+// =========================================================================
+// MASJID ADDITION REQUESTS & MASJID ADMIN APPLICATIONS
+// =========================================================================
+
+model MasjidAdditionRequest {
+  id               String   @id @default(uuid())
+  customId         String?  @unique
+  masjidName       String
+  location         String
+  city             String
+  contactName      String
+  contactPhone     String
+  contactEmail     String?
+  additionalInfo   String?
+  status           String   @default("PENDING") // PENDING | APPROVED | REJECTED
+  requestingUserId String?
+  reviewedBy       String?
+  rejectionReason  String?
+  approvedMasjidId String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model MasjidAdminApplication {
+  id               String   @id @default(uuid())
+  customId         String?  @unique
+  userId           String?
+  applicantName    String
+  applicantEmail   String
+  applicantPhone   String
+  masjidName       String
+  location         String
+  city             String
+  contactName      String
+  contactPhone     String
+  contactEmail     String?
+  additionalInfo   String?
+  existingMasjidId String?
+  status           String   @default("PENDING") // PENDING | APPROVED | REJECTED | SUSPENDED
+  reviewedBy       String?
+  rejectionReason  String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([status])
+  @@index([applicantEmail])
+  @@index([createdAt])
+}
+
+// =========================================================================
+// ADS BUZZ MANAGER — ADVERTISEMENTS & SYSTEM SETTINGS
+// =========================================================================
+
+enum AdPlacement {
+  HOME_ONLY
+  INNER_ONLY
+  BOTH
+  PROPERTIES_ONLY
+  PROPERTY_DETAIL_ONLY
+}
+
+enum AdFormat {
+  FULL_WIDTH
+  HALF_WIDTH
+  QUAD_GRID
+}
+
+model Advertisement {
+  id           String      @id @default(uuid())
+  masjidId     String?
+  masjid       Masjid?     @relation(fields: [masjidId], references: [id], onDelete: Cascade)
+  name         String
+  description  String?
+  imageUrl     String
+  targetUrl    String
+  placement    AdPlacement @default(BOTH)
+  format       AdFormat    @default(FULL_WIDTH)
+  isExclusive  Boolean     @default(false)
+  isActive     Boolean     @default(true)
+  isTest       Boolean     @default(false)
+  displayOrder Int         @default(0)
+  clickCount   Int         @default(0)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@index([masjidId])
+  @@index([placement])
+  @@index([isActive])
+  @@index([displayOrder])
+  @@index([isExclusive])
+  @@index([isTest])
+}
+
+model SystemSetting {
+  key       String   @id
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
